@@ -1,0 +1,49 @@
+pipeline {
+    agent any
+    environment {
+        FQDN = "${CLUSTERNAME}.k8s.local"
+        FULLNAME = "${CLUSTERNAME}-k8s-local"
+        BUCKETNAME = "${CLUSTERNAME}-k8s-local-bucket"
+        REGION = "us-west-2"
+        AZ = "us-west-2a,us-west-2b"
+        KOPS_STATE_STORE = "s3://${BUCKETNAME}"
+    }
+    stages {
+        stage('preps') {
+            steps {
+                sh "cp ~/kops_cluster ."
+            }
+        }
+        stage('create s3 bucket') {
+            steps {
+                sh "./kops_cluster s3_bucket ${CLUSTERNAME}"
+            }
+        }
+        stage('create cluster') {
+            steps {
+                sh "./kops_cluster create ${CLUSTERNAME}"
+            }
+        }
+        stage('validate cluster') {
+            options {
+                timeout(time: 20, unit: 'MINUTES') 
+            }            
+            steps {
+                sh "./kops_cluster validate ${CLUSTERNAME}"
+            }
+        }
+        stage('create deployment') {
+            steps {
+                // sh "kubectl run web-app --image=cyberjohn00/web-app:1.8 --replicas=2 --port=8000"
+                sh "kubectl create -f ~/deployment-web-app.yml"
+                sh "kubectl get pods"
+                sh "kubectl expose deployment web-app-deploy --port=8000 --type=LoadBalancer"
+            }
+        }
+        stage('test loadbalancer') {
+            steps {
+                sh "~/run_test_loadbalancer.sh"
+            }
+        }
+    }
+}

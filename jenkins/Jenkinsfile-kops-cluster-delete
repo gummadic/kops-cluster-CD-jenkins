@@ -1,0 +1,18 @@
+pipeline {
+    agent any
+    environment {
+        FQDN = "${CLUSTERNAME}.k8s.local"
+        FULLNAME = "${CLUSTERNAME}-k8s-local"
+        BUCKETNAME = "${CLUSTERNAME}-k8s-local-bucket"
+        REGION = "us-west-2"
+        AZ = "us-west-2a,us-west-2b"
+        KOPS_STATE_STORE = "s3://${BUCKETNAME}"
+    }
+    stages {
+        stage('delete cluster') {
+            steps {
+                sh "~/kops_cluster delete ${CLUSTERNAME}"
+            }
+        }
+    }
+}

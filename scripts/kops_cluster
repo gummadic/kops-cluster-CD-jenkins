@@ -1,0 +1,48 @@
+#!/bin/sh
+
+errx() {
+    echo $1
+    exit 1
+}
+
+set -x
+action=$1
+CLUSTERNAME=$2
+[ -z $action ] && "Action is not defined"
+[ -z $CLUSTERNAME ] && "Cluster name is not defined"
+FQDN="${CLUSTERNAME}.k8s.local"
+FULLNAME="${CLUSTERNAME}-k8s-local"
+REGION="us-west-2"
+AZ="us-west-2a,us-west-2b"
+
+validate() {
+    sleep 10
+    kops validate cluster --name $FQDN
+    [ $? -ne 0 ] && validate
+    return
+}
+
+create_s3_bucket() {
+    unset KOPS_STATE_STORE
+    BUCKETNAME=${CLUSTERNAME}-k8s-local-bucket
+    aws s3api create-bucket --bucket $BUCKETNAME --region $REGION --create-bucket-configuration LocationConstraint=$REGION || errx "aws s3api create-bucket error"
+    aws s3api put-bucket-versioning --bucket $BUCKETNAME  --versioning-configuration Status=Enabled || errx "aws s3api put-bucket-versioning"
+}
+
+create() {
+    rm -f ~/.ssh/id_rsa.${CLUSTERNAME} ~/.ssh/id_rsa.${CLUSTERNAME}.pub
+    cat /dev/zero | ssh-keygen -t rsa -b 2048 -q -N '' -f ~/.ssh/id_rsa.${CLUSTERNAME}
+    kops create cluster ${FQDN} --zones us-west-2a,us-west-2b --yes
+    kops create secret --name ${FQDN} sshpublickey admin -i ~/.ssh/id_rsa.${CLUSTERNAME}.pub
+    kops update cluster ${FQDN} --yes
+}
+
+delete() {
+     kops delete cluster ${FQDN} --yes
+}
+
+[ $action == "s3_bucket" ] && create_s3_bucket
+[ $action == "create" ] && create
+[ $action == "validate" ] && validate
+[ $action == "delete" ] && delete
+exit 0

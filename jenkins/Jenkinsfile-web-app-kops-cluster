@@ -1,0 +1,80 @@
+pipeline {
+    agent any
+    environment {
+        GIT_SSL_NO_VERIFY = 'true'
+    }
+    stages {
+        stage('Checkout and preps') {
+            steps {
+                sh "env"
+                git url: 'https://github.com/johnreed00/web-app.git'
+                sh "rsync -az docker/ ~/docker"
+                sh "rsync -az --delete ./ ~/docker/www"
+                sh "docker stop web-app || test 0"
+                sh "docker rm web-app || test 0"
+                
+            }
+        }
+        stage('Build') {
+            environment { 
+                APP_VERSION = sh (
+                    script: 'cat version',
+                    returnStdout: true
+                ).trim()
+            }
+            steps {
+                sh "cd ~/docker && docker build -t web-app:${APP_VERSION} ."
+            }
+        }
+        stage('Run stage web-app') {
+            environment { 
+                APP_VERSION = sh (
+                    script: 'cat version',
+                    returnStdout: true
+                ).trim()
+            }
+            steps {
+                echo "trivial http tests"
+                sh "docker run --name web-app -ti -v /sys/fs/cgroup:/sys/fs/cgroup:ro -d -p 8000:8000 web-app:${APP_VERSION}"
+                sh "sleep 3"
+                sh "docker exec web-app curl http://127.0.0.1:8000/cgi-bin/app.py --head|grep -E 'HTTP/1.0 200 Script output follows'"
+                sh "docker exec web-app curl http://127.0.0.1:8000/cgi-bin/app.py --verbose|grep -E 'Last revision'"
+            }
+        }
+        stage('push image to DockerRegistry') {
+            environment { 
+                APP_VERSION = sh (
+                    script: 'cat version',
+                    returnStdout: true
+                ).trim()
+                APP_IMAGE = "cyberjohn00/web-app:${APP_VERSION}"
+            }
+            steps {
+                withDockerRegistry([ credentialsId: "aa70ae6b-1fe1-4b86-bdd8-f46e7a58a0ba", url: "" ]) {
+                    sh "docker tag web-app:${APP_VERSION} ${APP_IMAGE}"
+                    sh "docker push ${APP_IMAGE}"
+                }
+            }        
+        }
+        stage('deploy in prod') {
+            environment { 
+                APP_VERSION = sh (
+                    script: 'cat version',
+                    returnStdout: true
+                ).trim()
+                APP_IMAGE = "cyberjohn00/web-app:${APP_VERSION}"
+            }
+            steps {
+                sh "kubectl set image deployment.apps/web-app-deploy web-app=cyberjohn00/web-app:${APP_VERSION}"
+                sh "kubectl get pods"
+                sh "kubectl rollout status deployment.apps/web-app-deploy"
+                sh "sleep 20"
+            }
+        }
+        stage('test loadbalancer') {
+            steps {
+                sh "~/run_test_loadbalancer.sh"
+            }
+        }
+    }
+}
