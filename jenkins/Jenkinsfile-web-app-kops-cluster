@@ -68,7 +68,6 @@ pipeline {
                 sh "kubectl set image deployment.apps/web-app-deploy web-app=cyberjohn00/web-app:${APP_VERSION}"
                 sh "kubectl get pods"
                 sh "kubectl rollout status deployment.apps/web-app-deploy"
-                sh "sleep 20"
             }
         }
         stage('test loadbalancer') {
